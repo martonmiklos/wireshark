@@ -25,6 +25,7 @@ DIAG_ON(frame-larger-than=)
 #include <epan/prefs.h>
 #include <epan/stats_tree_priv.h>
 #include <epan/plugin_if.h>
+#include <epan/prefs-int.h>
 #include <epan/export_object.h>
 
 #include "ui/iface_toolbar.h"
@@ -1175,11 +1176,20 @@ void MainWindow::mergeCaptureFile()
                 msg_dialog.setInformativeText(tr("Changes must be saved before the files can be merged."));
             }
 
+#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
+            QCheckBox *do_not_ask_again_checkbox = new QCheckBox(this);
+            do_not_ask_again_checkbox->setText(tr("Do not ask for saving unsaved changes again"));
+            msg_dialog.setCheckBox(do_not_ask_again_checkbox);
+#endif
             msg_dialog.setStandardButtons(QMessageBox::Save | QMessageBox::Cancel);
             msg_dialog.setDefaultButton(QMessageBox::Save);
 
             response = msg_dialog.exec();
-
+#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
+            if (do_not_ask_again_checkbox->isChecked() && response != QMessageBox::Cancel) {
+                disableAskForUnsaved();
+            }
+#endif
             switch (response) {
 
             case QMessageBox::Save:
@@ -1886,13 +1896,24 @@ bool MainWindow::testCaptureFileClose(QString before_what, FileCloseContext cont
              */
             discard_button->setFocus();
 #endif
-
+#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
+            QCheckBox *do_not_ask_again_checkbox = new QCheckBox(this);
+            do_not_ask_again_checkbox->setText(tr("Do not ask for saving unsaved changes again"));
+            msg_dialog.setCheckBox(do_not_ask_again_checkbox);
+#endif
             msg_dialog.exec();
             /* According to the Qt doc:
              * when using QMessageBox with custom buttons, exec() function returns an opaque value.
              *
              * Therefore we should use clickedButton() to determine which button was clicked. */
 
+#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
+            if (do_not_ask_again_checkbox->isChecked()
+                    && (msg_dialog.clickedButton() == save_button
+                        || msg_dialog.clickedButton() == discard_button)) {
+                disableAskForUnsaved();
+            }
+#endif
             if (msg_dialog.clickedButton() == save_button) {
 #ifdef HAVE_LIBPCAP
                 /* If there's a capture in progress, we have to stop the capture
@@ -2893,6 +2914,16 @@ void MainWindow::setMwFileName(QString fileName)
 {
     mwFileName_ = fileName;
     return;
+}
+
+void MainWindow::disableAskForUnsaved()
+{
+    char *errmsg = nullptr;
+    char key[22];
+    sprintf(key, "gui.ask_unsaved:FALSE");
+    prefs_set_pref(key, &errmsg);
+    prefs.gui_ask_unsaved = false;
+    prefs_main_write();
 }
 
 /*
